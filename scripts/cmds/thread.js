@@ -1,178 +1,272 @@
-const { getTime } = global.utils;
-
-module.exports = {
-	config: {
-		name: "thread",
-		version: "1.5",
-		author: "NTKhang",
-		countDown: 5,
-		role: 0,
-		description: {
-			vi: "Quản lý các nhóm chat trong hệ thống bot",
-			en: "Manage group chat in bot system"
-		},
-		category: "owner",
-		guide: {
-			vi: "   {pn} [find | -f | search | -s] <tên cần tìm>: tìm kiếm nhóm chat trong dữ liệu bot bằng tên"
-				+ "\n   {pn} [find | -f | search | -s] [-j | joined] <tên cần tìm>: tìm kiếm nhóm chat trong dữ liệu mà bot còn tham gia bằng tên"
-				+ "\n   {pn} [ban | -b] [<tid> | để trống] <reason>: dùng để cấm nhóm mang id <tid> hoặc nhóm hiện tại sử dụng bot"
-				+ "\n   Ví dụ:"
-				+ "\n    {pn} ban 3950898668362484 spam bot"
-				+ "\n    {pn} ban spam quá nhiều"
-				+ "\n\n   {pn} unban [<tid> | để trống] để bỏ cấm nhóm mang id <tid> hoặc nhóm hiện tại"
-				+ "\n   Ví dụ:"
-				+ "\n    {pn} unban 3950898668362484"
-				+ "\n    {pn} unban",
-			en: "   {pn} [find | -f | search | -s] <name to find>: search group chat in bot data by name"
-				+ "\n   {pn} [find | -f | search | -s] [-j | joined] <name to find>: search group chat in bot data that bot still joined by name"
-				+ "\n   {pn} [ban | -b] [<tid> | leave blank] <reason>: use to ban group with id <tid> or current group using bot"
-				+ "\n   Example:"
-				+ "\n    {pn} ban 3950898668362484 spam bot"
-				+ "\n    {pn} ban spam too much"
-				+ "\n\n   {pn} unban [<tid> | leave blank] to unban group with id <tid> or current group"
-				+ "\n   Example:"
-				+ "\n    {pn} unban 3950898668362484"
-				+ "\n    {pn} unban"
-		}
-	},
-
-	langs: {
-		vi: {
-			noPermission: "Bạn không có quyền sử dụng tính năng này",
-			found: "🔎 Tìm thấy %1 nhóm trùng với từ khóa \"%2\" trong dữ liệu của bot:\n%3",
-			notFound: "✗ Không tìm thấy nhóm nào có tên khớp với từ khoá: \"%1\" trong dữ liệu của bot",
-			hasBanned: "Nhóm mang id [%1 | %2] đã bị cấm từ trước:\n» Lý do: %3\n» Thời gian: %4",
-			banned: "Đã cấm nhóm mang id [%1 | %2] sử dụng bot.\n» Lý do: %3\n» Thời gian: %4",
-			notBanned: "Hiện tại nhóm mang id [%1 | %2] không bị cấm sử dụng bot",
-			unbanned: "Đã bỏ cấm nhóm mang tid [%1 | %2] sử dụng bot",
-			missingReason: "Lý do cấm không được để trống",
-			info: "» Box ID: %1\n» Tên: %2\n» Ngày tạo data: %3\n» Tổng thành viên: %4\n» Nam: %5 thành viên\n» Nữ: %6 thành viên\n» Tổng tin nhắn: %7%8"
-		},
-		en: {
-			noPermission: "You don't have permission to use this feature",
-			found: "🔎 Found %1 group matching the keyword \"%2\" in bot data:\n%3",
-			notFound: "✗ No group found matching the keyword: \"%1\" in bot data",
-			hasBanned: "Group with id [%1 | %2] has been banned before:\n» Reason: %3\n» Time: %4",
-			banned: "Banned group with id [%1 | %2] using bot.\n» Reason: %3\n» Time: %4",
-			notBanned: "Group with id [%1 | %2] is not banned using bot",
-			unbanned: "Unbanned group with tid [%1 | %2] using bot",
-			missingReason: "Ban reason cannot be empty",
-			info: "» Box ID: %1\n» Name: %2\n» Date created data: %3\n» Total members: %4\n» Boy: %5 members\n» Girl: %6 members\n» Total messages: %7%8"
-		}
-	},
-
-	onStart: async function ({ args, threadsData, message, role, event, getLang }) {
-		const type = args[0];
-
-		switch (type) {
-			// find thread
-			case "find":
-			case "search":
-			case "-f":
-			case "-s": {
-				if (role < 2)
-					return message.reply(getLang("noPermission"));
-				let allThread = await threadsData.getAll();
-				let keyword = args.slice(1).join(" ");
-				if (['-j', '-join'].includes(args[1])) {
-					allThread = allThread.filter(thread => thread.members.some(member => member.userID == global.GoatBot.botID && member.inGroup));
-					keyword = args.slice(2).join(" ");
-				}
-				const result = allThread.filter(item => item.threadID.length > 15 && (item.threadName || "").toLowerCase().includes(keyword.toLowerCase()));
-				const resultText = result.reduce((i, thread) => i += `\n╭Name: ${thread.threadName}\n╰ID: ${thread.threadID}`, "");
-				let msg = "";
-				if (result.length > 0)
-					msg += getLang("found", result.length, keyword, resultText);
-				else
-					msg += getLang("notFound", keyword);
-				message.reply(msg);
-				break;
-			}
-			// ban thread
-			case "ban":
-			case "-b": {
-				if (role < 2)
-					return message.reply(getLang("noPermission"));
-				let tid, reason;
-				if (!isNaN(args[1])) {
-					tid = args[1];
-					reason = args.slice(2).join(" ");
-				}
-				else {
-					tid = event.threadID;
-					reason = args.slice(1).join(" ");
-				}
-				if (!tid)
-					return message.SyntaxError();
-				if (!reason)
-					return message.reply(getLang("missingReason"));
-				reason = reason.replace(/\s+/g, ' ');
-				const threadData = await threadsData.get(tid);
-				const name = threadData.threadName;
-				const status = threadData.banned.status;
-
-				if (status)
-					return message.reply(getLang("hasBanned", tid, name, threadData.banned.reason, threadData.banned.date));
-				const time = getTime("DD/MM/YYYY HH:mm:ss");
-				await threadsData.set(tid, {
-					banned: {
-						status: true,
-						reason,
-						date: time
-					}
-				});
-				return message.reply(getLang("banned", tid, name, reason, time));
-			}
-			// unban thread
-			case "unban":
-			case "-u": {
-				if (role < 2)
-					return message.reply(getLang("noPermission"));
-				let tid;
-				if (!isNaN(args[1]))
-					tid = args[1];
-				else
-					tid = event.threadID;
-				if (!tid)
-					return message.SyntaxError();
-
-				const threadData = await threadsData.get(tid);
-				const name = threadData.threadName;
-				const status = threadData.banned.status;
-
-				if (!status)
-					return message.reply(getLang("notBanned", tid, name));
-				await threadsData.set(tid, {
-					banned: {}
-				});
-				return message.reply(getLang("unbanned", tid, name));
-			}
-			// info thread
-			case "info":
-			case "-i": {
-				let tid;
-				if (!isNaN(args[1]))
-					tid = args[1];
-				else
-					tid = event.threadID;
-				if (!tid)
-					return message.SyntaxError();
-				const threadData = await threadsData.get(tid);
-				const createdDate = getTime(threadData.createdAt, "DD/MM/YYYY HH:mm:ss");
-				const valuesMember = Object.values(threadData.members).filter(item => item.inGroup);
-				const totalBoy = valuesMember.filter(item => item.gender == "MALE").length;
-				const totalGirl = valuesMember.filter(item => item.gender == "FEMALE").length;
-				const totalMessage = valuesMember.reduce((i, item) => i += item.count, 0);
-				const infoBanned = threadData.banned.status ?
-					`\n- Banned: ${threadData.banned.status}`
-					+ `\n- Reason: ${threadData.banned.reason}`
-					+ `\n- Time: ${threadData.banned.date}` :
-					"";
-				const msg = getLang("info", threadData.threadID, threadData.threadName, createdDate, valuesMember.length, totalBoy, totalGirl, totalMessage, infoBanned);
-				return message.reply(msg);
-			}
-			default:
-				return message.SyntaxError();
-		}
+ module.exports.config = {
+	name: "thread",
+	version: "1.0.5",
+	hasPermssion: 2,
+	credits: "𝐂𝐘𝐁𝐄𝐑 ☢️_𖣘 -𝐁𝐎𝐓 ⚠️ 𝑻𝑬𝑨𝑴_ ☢️",
+	description: "Ban or unban a group",
+	commandCategory: "system",
+	usages: "[unban/ban/search] [ID or text]",
+	cooldowns: 5,
+	dependencies: {
+		"moment-timezone": ""
 	}
 };
+
+module.exports.languages = {
+	"vi": {
+		"reason": "Lý do",
+		"at": "vào lúc",
+		"allCommand": "toàn bộ lệnh",
+		"commandList": "những lệnh",
+		"banSuccess": "[☠️ 𝐁𝐚𝐧 𝐓𝐡𝐫𝐞𝐚𝐝 ☠️] - 𝐗𝐮̛̉ 𝐥𝐲́ 𝐭𝐡𝐚̀𝐧𝐡 𝐜𝐨̂𝐧𝐠 𝐲𝐞̂𝐮 𝐜𝐚̂̀𝐮 𝐜𝐚̂́𝐦 𝐧𝐡𝐨́𝐦 𝐜𝐨́ 𝐈𝐃 %1",
+		"unbanSuccess": "[🌸 𝐔𝐧𝐛𝐚𝐧 𝐓𝐡𝐫𝐞𝐚𝐝 🌸] - 𝐗𝐮̛̉ 𝐥𝐲́ 𝐭𝐡𝐚̀𝐧𝐡 𝐜𝐨̂𝐧𝐠 𝐲𝐞̂𝐮 𝐜𝐚̂̀𝐮 𝐠𝐨̛̃ 𝐜𝐚̂́𝐦 𝐧𝐡𝐨́𝐦 𝐜𝐨́ 𝐈𝐃 %1",
+		"banCommandSuccess": "[📌 𝐁𝐚𝐧𝐂𝐨𝐦𝐦𝐚𝐧𝐝 𝐓𝐡𝐫𝐞𝐚𝐝 🚨] - 𝐗𝐮̛̉ 𝐥𝐲́ 𝐭𝐡𝐚̀𝐧𝐡 𝐜𝐨̂𝐧𝐠 𝐲𝐞̂𝐮 𝐜𝐚̂̀𝐮 𝐜𝐚̂́𝐦 𝐥𝐞̣̂𝐧𝐡 𝐯𝐨̛́𝐢 𝐧𝐡𝐨́𝐦 𝐜𝐨́ 𝐈𝐃 %1",
+		"unbanCommandSuccess": "[💎 𝐔𝐧𝐛𝐚𝐧𝐂𝐨𝐦𝐦𝐚𝐧𝐝 𝐓𝐡𝐫𝐞𝐚𝐝 🌸] - 𝐗𝐮̛̉ 𝐥𝐲́ 𝐭𝐡𝐚̀𝐧𝐡 𝐜𝐨̂𝐧𝐠 𝐲𝐞̂𝐮 𝐜𝐚̂̀𝐮 𝐠𝐨̛̃ 𝐜𝐚̂́𝐦 %1 𝐫𝐢𝐞̂𝐧𝐠 𝐯𝐨̛́𝐢 𝐧𝐡𝐨́𝐦 𝐜𝐨́ 𝐈𝐃 %2",
+		"errorReponse": "%1 Không thể hoàn tất công việc bạn yêu cầu đối với nhóm có ID %2",
+		"IDNotFound": "%1 ID bạn nhập không tồn tại trong cơ sở dữ liệu",
+		"existBan": "[💸 𝐁𝐚𝐧 𝐓𝐡𝐫𝐞𝐚𝐝 💸] - 𝐈𝐃 %1 𝐡𝐢𝐞̣̂𝐧 𝐯𝐚̂̃𝐧 𝐛𝐢̣ 𝐛𝐚𝐧 𝐭𝐮̛̀ 𝐭𝐫𝐮̛𝐨̛́𝐜 %2 %3",
+		"notExistBan": "[🚨 𝐔𝐧𝐛𝐚𝐧 𝐓𝐡𝐫𝐞𝐚𝐝 🚨] - 𝐈𝐃 𝐛𝐚̣𝐧 𝐧𝐡𝐚̣̂𝐩 𝐜𝐡𝐮̛𝐚 𝐭𝐮̛̀𝐧𝐠 𝐛𝐢̣ 𝐜𝐚̂́𝐦 𝐬𝐮̛̉ 𝐝𝐮̣𝐧𝐠 𝐛𝐨𝐭",
+		"missingCommandInput": "%1 Phần command cần cấm không được để trống!",
+		"notExistBanCommand": "[🧬 𝐔𝐧𝐛𝐚𝐧𝐂𝐨𝐦𝐦𝐚𝐧𝐝 𝐓𝐡𝐫𝐞𝐚𝐝 🧬] - 𝐇𝐢𝐞̣̂𝐧 𝐭𝐚̣𝐢 𝐈𝐃 𝐧𝐡𝐨́𝐦 𝐛𝐚̣𝐧 𝐧𝐡𝐚̣̂𝐩 𝐜𝐡𝐮̛𝐚 𝐭𝐮̛̀𝐧𝐠 𝐛𝐢̣ 𝐜𝐚̂́𝐦 𝐬𝐮̛̉ 𝐝𝐮̣𝐧𝐠 𝐥𝐞̣̂𝐧𝐡",
+
+		"returnBan": "[📌 𝐁𝐚𝐧 𝐓𝐡𝐫𝐞𝐚𝐝 💌] - 𝐇𝐢𝐞̣̂𝐧 𝐭𝐚̣𝐢 𝐛𝐚̣𝐧 𝐯𝐮̛̀𝐚 𝐲𝐞̂𝐮 𝐜𝐚̂̀𝐮 𝐜𝐡𝐨 𝐧𝐡𝐨́𝐦 𝐧𝐚̀𝐲 𝐯𝐞̂̀ 𝐜𝐚́𝐭 𝐛𝐮̣𝐢:\n❯ 𝐈𝐃 𝐧𝐡𝐨́𝐦 𝐜𝐚̂̀𝐧 𝐜𝐚̂́𝐦: %1%2\n\n❮💸 𝐑𝐞𝐚𝐜𝐭𝐢𝐨𝐧 𝐭𝐢𝐧 𝐧𝐡𝐚̆́𝐧 𝐧𝐚̀𝐲 𝐧𝐞̂́𝐮 𝐱𝐚́𝐜 𝐧𝐡𝐚̣̂𝐧 𝐜𝐚̂́𝐦 🌸❯",
+		"returnUnban": "[ 𝐔𝐧𝐛𝐚𝐧 𝐓𝐡𝐫𝐞𝐚𝐝 ] - 𝐇𝐢𝐞̣̂𝐧 𝐭𝐚̣𝐢 𝐛𝐚̣𝐧 𝐯𝐮̛̀𝐚 𝐲𝐞̂𝐮 𝐜𝐚̂̀𝐮 𝐜𝐡𝐨 𝐧𝐡𝐨́𝐦 𝐧𝐚̀𝐲 𝐦𝐨̣̂𝐭 𝐚̂𝐧 𝐡𝐮𝐞̣̂ 𝐯𝐞̂̀ 𝐡𝐨𝐚̀ 𝐧𝐡𝐚̣̂𝐩 𝐯𝐨̛́𝐢 𝐱𝐚̃ 𝐡𝐨̣̂𝐢:\n❯ 𝐈𝐃 𝐧𝐡𝐨́𝐦 𝐜𝐚̂̀𝐧 𝐠𝐨̛̃ 𝐜𝐚̂́𝐦: %1\n\n❮💌 𝐑𝐞𝐚𝐜𝐭𝐢𝐨𝐧 𝐭𝐢𝐧 𝐧𝐡𝐚̆́𝐧 𝐧𝐚̀𝐲 𝐧𝐞̂́𝐮 𝐱𝐚́𝐜 𝐧𝐡𝐚̣̂𝐧 𝐠𝐨̛̃ 𝐜𝐚̂́𝐦 💎❯",
+		"returnBanCommand": "[ 𝐁𝐚𝐧𝐂𝐨𝐦𝐦𝐚𝐧𝐝 𝐓𝐡𝐫𝐞𝐚𝐝 ] - Hiện tại bạn đang yêu cầu cấm sử dụng lệnh đối với nhóm:\n - ID nhóm cần cấm: %1\n- Các lệnh cần cấm: %2\n\n❮ Reaction tin nhắn này để xác thực ❯",
+		"returnUnbanCommand": "[ 𝐔𝐧𝐛𝐚𝐧𝐂𝐨𝐦𝐦𝐚𝐧𝐝 𝐓𝐡𝐫𝐞𝐚𝐝 ] - Hiện tại bạn đang yêu cầu gỡ cấm sử dụng lệnh đối với nhóm:\n - ID nhóm cần gỡ cấm lệnh: %1\n- Các lệnh cần gỡ cấm: %2\n\n❮ Reaction tin nhắn này để xác thực ❯",
+	
+		"returnResult": "Đây là kết quả phù hợp: \n",
+		"returnNull": "Không tìm thấy kết quả dựa vào tìm kiếm của bạn!",
+		"returnList": "[ Thread List ]\nHiện tại đang có %1 nhóm bị ban, dưới đây là %2 nhóm\n\n%3",
+		"returnInfo": "[ Info Thread ] Đây là một sô thông tin về nhóm bạn cần tìm:\n- ID của nhóm: %1n- Có bị ban?: %2 %3 %4\n- Bị ban lệnh?: %5"
+	},
+	"en": {
+		"reason": "Reason",
+		"at": "At",
+		"allCommand": "All commands",
+		"commandList": "Commands",
+		"banSuccess": "[ Ban Thread ] Banned thread has  ID %1",
+		"unbanSuccess": "[ Unban Thread ] Unbanned thread has ID %1",
+		"banCommandSuccess": "[ banCommand Thread ] Banned command with thread has  ID %1",
+		"unbanCommandSuccess": "[ unbanCommand Thread ] Unbanned %1 with thread has ID %2",
+		"errorReponse": "%1 Can't do what you request with thread has ID %2",
+		"IDNotFound": "%1 ID you import doesn't exist in database",
+		"existBan": "[ Ban Thread ] ID %1 has been banned before %2 %3",
+		"notExistBan": "[ Unban Thread ] ID you import hasn't been banned before bot",
+		"missingCommandInput": "%1 You have to import the command you want to ban!",
+		"notExistBanCommand": "[ UnbanCommand Thread ] The thread ID you import hasn't been banned before",
+
+		"returnBan": "[ Ban Thread ] You are requesting to ban thread:\n- Thread ID: %1%2\n\n❮ Reaction this message to complete ❯",
+		"returnUnban": "[ Unban Thread ] You are requesting to unban thread:\n- Thread ID: %1\n\n❮ Reaction this message to complete ❯",
+		"returnBanCommand": "[ banCommand Thread ] You are requesting to ban command with thread:\n - Thread ID: %1\n- Commands: %2\n\n❮ Reaction this message to complete ❯",
+		"returnUnbanCommand": "[ unbanCommand Thread ] You are requesting to unban command with thread:\n - Thread ID: %1\n- Commands: %2\n\n❮ Reaction this message to complete ❯",
+	
+		"returnResult": "This is your result: \n",
+		"returnNull": "There is no result with your input!",
+		"returnList": "[ Thread List ]\There are %1 banned thread, here are %2\n\n%3",
+		"returnInfo": "[ Info Thread ] Here are some information about your thread which you want to search:\n- Thread ID: %1n- Banned?: %2 %3 %4\n- Command banned?: %5"
+	}
+}
+
+module.exports.handleReaction = async ({ event, api, Threads, handleReaction, getText }) => {
+	if (parseInt(event.userID) !== parseInt(handleReaction.author)) return;
+	const moment = require("moment-timezone");
+	const { threadID } = event;
+	const { messageID, type, targetID, reason, commandNeedBan } = handleReaction;
+	
+	const time = moment.tz("Asia/Kolkata").format("HH:MM:ss L");
+	global.client.handleReaction.splice(global.client.handleReaction.findIndex(item => item.messageID == messageID), 1);
+
+	switch (type) {
+		case "ban": {
+			try {
+				let data = (await Threads.getData(targetID)).data || {};
+				data.banned = true;
+				data.reason = reason || null;
+				data.dateAdded = time;
+				await Threads.setData(targetID, { data });
+				global.data.threadBanned.set(targetID, { reason: data.reason, dateAdded: data.dateAdded });
+				return api.sendMessage(getText("banSuccess", targetID), threadID, () => {
+					return api.unsendMessage(messageID);
+				});
+			} catch { return api.sendMessage(getText("errorReponse", "[ Ban Thread ]", targetID), threadID) };
+		}
+
+		case "unban": {
+			try {
+				let data = (await Threads.getData(targetID)).data || {};
+				data.banned = false;
+				data.reason = null;
+				data.dateAdded = null;
+				await Threads.setData(targetID, { data });
+				global.data.threadBanned.delete(targetID);
+				return api.sendMessage(getText("unbanSuccess", targetID), threadID, () => {
+					return api.unsendMessage(messageID);
+				});
+			} catch { return api.sendMessage(getText("errorReponse", "[ unBan Thread ]", targetID), threadID) };
+		}
+
+		case "banCommand": {
+			try {	
+				let data = (await Threads.getData(targetID)).data || {};
+				data.commandBanned = [...data.commandBanned || [], ...commandNeedBan];
+				await Threads.setData(targetID, { data });
+				global.data.commandBanned.set(targetID, data.commandBanned);
+				return api.sendMessage(getText("banCommandSuccess", targetID), threadID, () => {
+					return api.unsendMessage(messageID);
+				});
+			} catch (e) { return api.sendMessage(getText("errorReponse", "[ banCommand Thread ]", targetID), threadID) };
+		}
+		
+		case "unbanCommand": {
+			try {
+				let data = (await Threads.getData(targetID)).data || {};
+				data.commandBanned = [...data.commandBanned.filter(item => !commandNeedBan.includes(item))];
+				await Threads.setData(targetID, { data });
+				global.data.commandBanned.set(targetID, data.commandBanned);
+				if(data.commandBanned.length == 0) global.data.commandBanned.delete(targetID)
+				return api.sendMessage(getText("unbanCommandSuccess", ((data.commandBanned.length == 0) ? getText("allCommand") : `${getText("commandList")}: ${commandNeedBan.join(", ")}`), targetID), threadID, () => {
+					return api.unsendMessage(messageID);
+				});
+			} catch (e) { return api.sendMessage(getText("errorReponse", "[ unbanCommand Thread ]", targetID), threadID) };
+		}
+		default:
+			break;
+	}
+}
+
+module.exports.run = async ({ event, api, args, Threads, getText }) => { 
+	const { threadID, messageID } = event;
+	var targetID = String(args[1]);
+	var reason = (args.slice(2, args.length)).join(" ") || null;
+
+	if (isNaN(targetID)) {
+		targetID = String(event.threadID);
+		reason = (args.slice(1, args.length)).join(" ") || null;
+	}
+
+	switch (args[0]) {
+		case "ban":
+		case "-b": {
+			if (!global.data.allThreadID.includes(targetID)) return api.sendMessage(getText("IDNotFound", "[ Ban Thread ]"), threadID, messageID);
+			if (global.data.threadBanned.has(targetID)) {
+				const { reason, dateAdded } = global.data.threadBanned.get(targetID) || {};
+				return api.sendMessage(getText("existBan", targetID, ((reason) ? `${getText("reason")}: "${reason}"` : ""), ((dateAdded) ? `${getText("at")}: ${dateAdded}` : "")), threadID, messageID);
+			}
+			return api.sendMessage(getText("returnBan", targetID, ((reason) ? `\n- ${getText("reason")}: ${reason}` : "")), threadID, (error, info) => {
+				global.client.handleReaction.push({
+					type: "ban",
+					targetID,
+					reason,
+					name: this.config.name,
+					messageID: info.messageID,
+					author: event.senderID,
+					
+				});
+			}, messageID);
+		}
+
+		case "unban":
+		case "-ub": {
+			if (!global.data.allThreadID.includes(targetID)) return api.sendMessage(getText("IDNotFound", "[ Unban Thread ]"), threadID, messageID);
+			if (!global.data.threadBanned.has(targetID)) return api.sendMessage(getText("notExistBan"), threadID, messageID);
+			return api.sendMessage(getText("returnUnban", targetID), threadID, (error, info) => {
+				global.client.handleReaction.push({
+					type: "unban",
+					targetID,
+					name: this.config.name,
+					messageID: info.messageID,
+					author: event.senderID,
+					
+				});
+			}, messageID);
+		}
+
+		case "banCommand":
+		case "-bc": {
+			if (!global.data.allThreadID.includes(targetID)) return api.sendMessage(getText("IDNotFound", "[ BanCommand Thread ]"), threadID, messageID);
+			if (reason == null || reason.length == 0) return api.sendMessage(getText("missingCommandInput", '[ BanCommand Thread ]'), threadID, messageID);
+			if (reason == "all") {
+				var allCommandName = [];
+				const commandValues = global.client.commands.keys();
+				for (const cmd of commandValues) allCommandName.push(cmd);
+				reason = allCommandName.join(" ");
+			}
+			const commandNeedBan = reason.split(" ");
+			return api.sendMessage(getText("returnBanCommand", targetID, ((commandNeedBan.length == global.client.commands.size) ? getText("allCommand") : commandNeedBan.join(", "))), threadID, (error, info) => {
+				global.client.handleReaction.push({
+					type: "banCommand",
+					targetID,
+					commandNeedBan,
+					name: this.config.name,
+					messageID: info.messageID,
+					author: event.senderID,
+					
+				});
+			}, messageID);
+		}
+
+		case "unbanCommand":
+		case "-ubc": {
+			if (!global.data.allThreadID.includes(targetID)) return api.sendMessage(getText("IDNotFound", "[ UnbanCommand Thread ]"), threadID, messageID);
+			if (!global.data.commandBanned.has(targetID)) return api.sendMessage(getText("notExistBanCommand"), threadID, messageID);
+			if (reason == null || reason.length == 0) return api.sendMessage(getText("missingCommandInput", "[ UnbanCommand Thread ]"), threadID, messageID);
+			if (reason == "all") {
+				reason = (global.data.commandBanned.get(targetID)).join(" ");
+			}
+			const commandNeedBan = reason.split(" ");
+			return api.sendMessage(getText("returnUnbanCommand", targetID, ((commandNeedBan.length == global.data.commandBanned.get(targetID).length) ? "toàn bộ lệnh" : commandNeedBan.join(", "))), threadID, (error, info) => {
+				global.client.handleReaction.push({
+					type: "unbanCommand",
+					targetID,
+					commandNeedBan,
+					name: this.config.name,
+					messageID: info.messageID,
+					author: event.senderID,
+					
+				});
+			}, messageID);
+		}
+
+		case "search":
+		case "-s": {
+			const contentJoin = reason || "";
+			const getThreads =  (await Threads.getAll(['threadID', 'threadInfo'])).filter(item => !!item.threadInfo);
+			var matchThreads = [], a = '', b = 0;
+			getThreads.forEach(i => {
+				if ((i.threadInfo.threadName || "").toLowerCase().includes(contentJoin.toLowerCase())) {
+					matchThreads.push({
+						name: i.threadInfo.threadName,
+						id: i.threadID
+					});
+				}
+			});
+			matchThreads.forEach(i => a += `\n${b += 1}. ${i.name} - ${i.id}`);
+			(matchThreads.length > 0) ? api.sendMessage(getText("returnResult", a), threadID) : api.sendMessage(getText("returnNull"), threadID, messageID);
+			break;
+		}
+
+		case "list":
+		case "-l": {
+			var listBan = [], i = 0;
+			const threadData = global.data.threadBanned.keys();
+			for (; ;) {
+				if (i > global.data.threadBanned.size) break;
+				let idThread = String(threadData.next().value);
+				if (typeof idThread == "undefined") {
+					const nameThread = (await Threads.getData(idThread)).threadInfo.threadName || "unknown";
+					listBan.push(`${i+=1}/ ${idThread} - ${nameThread}`)
+				}
+				if (i == global.data.threadBanned.size || i == (parseInt(reason) || 10)) break;
+			}
+			return api.sendMessage(getText("returnList",(global.data.threadBanned.size || 0), listBan.length, listBan.join("\n")), threadID, messageID);
+		}
+
+		case "info":
+		case "-i": {
+			if (!global.data.allThreadID.includes(targetID)) return api.sendMessage(getText("IDNotFound", "[ Info Thread ]"), threadID, messageID);
+			if (global.data.commandBanned.has(targetID)) { var commandBanned = global.data.commandBanned.get(targetID) || [] };
+			if (global.data.threadBanned.has(targetID)) { var { reason, dateAdded } = global.data.threadBanned.get(targetID) || {} };
+			return api.sendMessage(getText("returnInfo", targetID, ((!dateAdded) ? "YES" : "NO"), ((reason) ? `${getText("reason")}: "${reason}"` : ""), ((dateAdded) ? `${getText("at")}: ${dateAdded}` : ""), ((commandBanned) ? `YES: ${commandBanned.join(", ")}` : "NO")), threadID, messageID);
+		}
+	}
+}
